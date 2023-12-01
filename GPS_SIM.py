@@ -6,7 +6,8 @@ import time
 import math
 RADIUS_EARTH=6.371e6 #meters
 ROTATION_EARTH=7.2921150e-5 #rad/s
-
+GRAV_CONSTANT=6.67430e-11 #N*m^2/kg^2
+EARTH_MASS=5.97219e24 #kg
 def run3dTrackingSim(times,satPath1,tof,mps):
 	X0=0
 	Y0=0
@@ -19,10 +20,8 @@ def run3dTrackingSim(times,satPath1,tof,mps):
 	ax = fig.add_subplot(111,projection='3d')
 	plt.ion()
 	plt.show()
-	ax.set_xlabel("X axis")
-	ax.set_ylabel("Y Axis")
-	ax.set_zlabel("Z Axis")
 	for t in times:
+		start = time.time()
 		satX = satPath1[t,0]
 		satY = satPath1[t,1]
 		satZ = satPath1[t,2]
@@ -32,6 +31,9 @@ def run3dTrackingSim(times,satPath1,tof,mps):
 		yAnt[0] = -1e9/(sigStr[1])
 		zAnt[0] = -1e9/(sigStr[2])
 		ax.clear()
+		ax.set_xlabel("X axis")
+		ax.set_ylabel("Y Axis")
+		ax.set_zlabel("Z Axis")
 		ax.set_xlim([-3*RADIUS_EARTH,3*RADIUS_EARTH])
 		ax.set_ylim([-3*RADIUS_EARTH,3*RADIUS_EARTH])
 		ax.set_zlim([-3*RADIUS_EARTH,3*RADIUS_EARTH])
@@ -39,8 +41,13 @@ def run3dTrackingSim(times,satPath1,tof,mps):
 		plotAntennaToSat(ax,X0,Y0,Z0,satX,satY,satZ)
 		plotAntenna(ax,X0,Y0,Z0,xAnt,yAnt,zAnt)
 		plotEarth(ax,t,mps)
-		plt.pause(.01)
+		plt.pause(1e-3)
+		end = time.time()
+		while (end-start<1e-2):
+			time.sleep(1e-3)
+			end = time.time()
 		plt.show()
+		
     
 def updateAntennaPosition(xAnt,yAnt,zAnt):	
 	thetaErr = 0
@@ -64,11 +71,12 @@ def setSatellitePath(tof,mps,alt,rot):
 	times = range(int(tof*mps))#number of points to measure in a 10 second timespan
 	times = np.divide(times,mps)
 	r = alt+RADIUS_EARTH
+	orbPeriod = 2*math.pi*math.sqrt(r**3/(GRAV_CONSTANT*EARTH_MASS))
 	satPosMat = []
 	c, s = np.cos(rot), np.sin(rot)
 	R = np.matrix([[c, 0, s], [0, 1, 0], [-s, 0, c]])
 	for t in times:
-		v= np.matrix([[r * math.cos(t)],[r * math.sin(t)],[0]])
+		v= np.matrix([[r * math.cos(-t/orbPeriod)],[r * math.sin(-t/orbPeriod)],[0]])
 		satPosMat.append((R*v).T)
 	satPath = np.stack(satPosMat)
 	print(satPath)
@@ -93,8 +101,8 @@ def plotSatellite(ax,satX,satY,satZ,satPath1):
 	ax.scatter(satX, satY, satZ, c='red', marker='.', s=20)
 	ax.scatter(satPath1[:,0],satPath1[:,1],satPath1[:,2], c='red', marker='.', s=5)
 ##Void Run Method for simulation
-tof =  864000 # in seconds
-mps =  1/3600 # Number of Simulatred Location points per second
+tof =  86400 # in seconds
+mps =  1/60 # Number of Simulatred Location points per second
 satPath1 = setSatellitePath(tof,mps,2e7,np.radians(45))
 satPath2 = setSatellitePath(tof,mps,3e7,np.radians(20))	
 while True:
