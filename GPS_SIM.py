@@ -1,16 +1,20 @@
 #Nathan Morrow AFIT Fall 2023
+#All GPS data is downloaded from NAVCEN
+#https://www.navcen.uscg.gov/gps-nanus-almanacs-opsadvisories-sof
+
 from matplotlib import pyplot as plt
 import matplotlib.animation as animation
 import numpy as np
 import time
 import math
+import yuma_decode
 RADIUS_EARTH=6.371e6 #meters
 ROTATION_EARTH=7.2921150e-5 #rad/s
 GRAV_CONSTANT=6.67430e-11 #N*m^2/kg^2
 EARTH_MASS=5.97219e24 #kg
 ANTENNA_LOCATION = [39.765659548785884, -84.19151722210734] #Latitude/Longitude in degrees
 #Assuming antenna is normal to earth surface
-def run3dTrackingSim(times,orbit_Planes,tof,mps):
+def run3dTrackingSim(times,orbit_Planes,tof,mps,satCoords):
 	#Create Antenna (radius,theta,phi) Starting Antenna Position
 	ant = [RADIUS_EARTH,np.radians(ANTENNA_LOCATION[0]),np.radians(ANTENNA_LOCATION[1])]
 	fig = plt.figure()
@@ -28,14 +32,15 @@ def run3dTrackingSim(times,orbit_Planes,tof,mps):
 		ax.set_zlim([-3*RADIUS_EARTH,3*RADIUS_EARTH])
 		ant = updateAntennaPosition(ant,t,mps)
 		plotEarth(ax,t,mps)
+		plotSats(ax,satCoords)
 		for orbit_plane in orbit_Planes:
 			satX = orbit_plane[t,0]
 			satY = orbit_plane[t,1]
 			satZ = orbit_plane[t,2]
 			sigStr = -(100)/updateAntennaStrength(ant,satX,satY,satZ)#SignalStrength array (xSignal,ySignal,zSignal)
 			plotAntenna(ax,ant,sigStr)
-			plotSatellite(ax,satX,satY,satZ,orbit_plane)
-			plotAntennaToSat(ax,ant,satX,satY,satZ)
+			#plotSatellite(ax,satX,satY,satZ,orbit_plane)
+			#plotAntennaToSat(ax,ant,satX,satY,satZ)
 		plt.pause(1e-3)
 		end = time.time()
 		while (end-start<1e-2):
@@ -55,6 +60,24 @@ def updateAntennaStrength(ant,satX,satY,satZ):
 	return antStr
 
 #Set orbit of L1 GPS satillite using ECEI frame 
+def getSatPos(args):
+	[satID,health,e,toa,inc,ascRate,sqrt_a,ra_week,w,E,Af0,Af1] = args
+	a = sqrt_a**2
+	b = math.sqrt(a**2*(1-e**2)) #https://jtauber.github.io/orbits/019.html
+	#position in the orbit plane
+	p = a*(math.cos(E)-e) #https://en.wikipedia.org/wiki/Kepler%27s_equation
+	q = b*math.sin(E)
+	#rotate by argument of periapsis
+	x = math.cos(w) * p - math.sin(w) * q
+	y = math.sin(w) * p + math.cos(w) * q
+	#rotate by inclination
+	z = math.sin(inc) * y
+	y = math.cos(inc) * y
+	#rotate by longitude of ascending node
+	xtemp = x
+	x = math.cos(ra_week) * xtemp - math.sin(ra_week) * y
+	y = math.sin(ra_week) * xtemp + math.cos(ra_week) * y
+	return [satID,x,y,z]
 def setSatellitePath(tof,mps,alt,theta,phi):
 	times = range(int(tof*mps))#number of points to measure in a 10 second timespan
 	times = np.divide(times,mps)
@@ -87,6 +110,10 @@ def plotAntenna(ax,ant,sigStr):
 def plotAntennaToSat(ax,ant,satX,satY,satZ):
 	antCart = sphericalTocartesian(ant)
 	ax.quiver(antCart[0],antCart[1],antCart[2],satX, satY, satZ, color = 'black', length = 0.5)#Tx Antenna 
+def plotSats(ax,satCoords):
+	for satCoord in satCoords:
+		ax.scatter(satCoord[1],satCoord[2],satCoord[3],c='green',marker='.',s=20)
+		ax.text(satCoord[1],satCoord[2],satCoord[3],int(satCoord[0]))
 def plotSatellite(ax,satX,satY,satZ,satPath1):
 	ax.scatter(satX, satY, satZ, c='black', marker='.', s=20)
 	ax.scatter(satPath1[:,0],satPath1[:,1],satPath1[:,2], c='red', marker='.', s=1)
@@ -96,8 +123,8 @@ def sphericalTocartesian(sCoords): #sCoords (rad,theta,phi)
 	cartZ=sCoords[0]*math.cos(sCoords[1])
 	return [cartX,cartY,cartZ]
 ##Void Run Method for simulation
-tof =  3*86400 # in seconds
-mps =  1/60 # Number of Simulatred Location points per second
+tof =  4*86400 # in seconds
+mps =  1/480 # Number of Simulatred Location points per second
 #Satellites paths are characterized by altitude, theta rotation, phi rotation.
 inc_ang = np.radians(55)#GNSS satellites have an inclination of 55 degrees
 satPathA = setSatellitePath(tof,mps,2e7,inc_ang,0)
@@ -107,10 +134,16 @@ satPathD = setSatellitePath(tof,mps,2e7,inc_ang+np.radians(45),2*np.radians(45))
 satPathE = setSatellitePath(tof,mps,2e7,inc_ang+np.radians(60),2*np.radians(60))	
 satPathF = setSatellitePath(tof,mps,2e7,inc_ang+np.radians(75),2*np.radians(75))
 orbit_Planes = [satPathA,satPathB,satPathC,satPathD,satPathE,satPathF]	
+[constData,activeSats]=yuma_decode.gatherData()
+satCoords = []
+for satData in constData:
+	satCoords.append(getSatPos(satData))
+satCoords = np.stack(satCoords)
+print(satCoords)
 while True:
 	try:
 		times = range(int(tof*mps))
-		run3dTrackingSim(times,orbit_Planes,tof,mps)
+		run3dTrackingSim(times,orbit_Planes,tof,mps,satCoords)
 	except OSError:
 		print(OSError)
 	pass
