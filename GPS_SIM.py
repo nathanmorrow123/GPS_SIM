@@ -3,6 +3,7 @@
 #https://www.navcen.uscg.gov/gps-nanus-almanacs-opsadvisories-sof
 
 from matplotlib import pyplot as plt
+import matplotlib as mpl
 import matplotlib.animation as animation
 import numpy as np
 import time
@@ -17,6 +18,7 @@ ANTENNA_LOCATION = [39.765659548785884, -84.19151722210734] #Latitude/Longitude 
 def run3dTrackingSim(times,orbit_Planes,tof,mps,satCoords):
 	#Create Antenna (radius,theta,phi) Starting Antenna Position
 	ant = [RADIUS_EARTH,np.radians(ANTENNA_LOCATION[0]),np.radians(ANTENNA_LOCATION[1])]
+	plt.style.use('dark_background')
 	fig = plt.figure()
 	ax = fig.add_subplot(111,projection='3d')
 	plt.ion()
@@ -27,6 +29,10 @@ def run3dTrackingSim(times,orbit_Planes,tof,mps,satCoords):
 		ax.set_xlabel("X axis")
 		ax.set_ylabel("Y Axis")
 		ax.set_zlabel("Z Axis")
+		ax.grid(False)
+		ax.xaxis.set_pane_color((.1, .1, .1, .1))
+		ax.yaxis.set_pane_color((.1, .1, .1, .1))
+		ax.zaxis.set_pane_color((.1, .1, .1, .1))
 		ax.set_xlim([-3*RADIUS_EARTH,3*RADIUS_EARTH])
 		ax.set_ylim([-3*RADIUS_EARTH,3*RADIUS_EARTH])
 		ax.set_zlim([-3*RADIUS_EARTH,3*RADIUS_EARTH])
@@ -124,8 +130,9 @@ def sphericalTocartesian(sCoords): #sCoords (rad,theta,phi)
 	return [cartX,cartY,cartZ]
 ##Void Run Method for simulation
 tof =  4*86400 # in seconds
-mps =  1/480 # Number of Simulatred Location points per second
+mps =  1/60 # Number of Simulatred Location points per second
 #Satellites paths are characterized by altitude, theta rotation, phi rotation.
+"""
 inc_ang = np.radians(55)#GNSS satellites have an inclination of 55 degrees
 satPathA = setSatellitePath(tof,mps,2e7,inc_ang,0)
 satPathB = setSatellitePath(tof,mps,2e7,inc_ang+np.radians(15),2*np.radians(15))
@@ -134,6 +141,8 @@ satPathD = setSatellitePath(tof,mps,2e7,inc_ang+np.radians(45),2*np.radians(45))
 satPathE = setSatellitePath(tof,mps,2e7,inc_ang+np.radians(60),2*np.radians(60))	
 satPathF = setSatellitePath(tof,mps,2e7,inc_ang+np.radians(75),2*np.radians(75))
 orbit_Planes = [satPathA,satPathB,satPathC,satPathD,satPathE,satPathF]	
+"""
+orbit_Planes = []
 [constData,activeSats]=yuma_decode.gatherData()
 satCoords = []
 for satData in constData:
