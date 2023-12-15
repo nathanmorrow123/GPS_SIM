@@ -37,22 +37,6 @@ def getSatPos(args):
 	x = math.cos(ra_week) * xtemp - math.sin(ra_week) * y
 	y = math.sin(ra_week) * xtemp + math.cos(ra_week) * y
 	return [satID,x,y,z]
-def setSatellitePath(tof,mps,alt,theta,phi):
-	times = range(int(tof*mps))#number of points to measure in a 10 second timespan
-	times = np.divide(times,mps)
-	r = alt+RADIUS_EARTH
-	orbPeriod = 2*math.pi*math.sqrt(r**3/(GRAV_CONSTANT*EARTH_MASS))#Keeplers Equation
-	satPosMat = []
-	c1, s1 = np.cos(theta), np.sin(theta)
-	c2, s2 = np.cos(phi), np.sin(phi)
-	R1 = np.matrix([[1, 0, 0], [0, c2, -s2], [0, s2, c2]])
-	R2 = np.matrix([[c1, 0, s1], [0, 1, 0], [-s1, 0, c1]])
-	for t in times:
-		v= np.matrix([[r * math.cos(-t/orbPeriod)],[r * math.sin(-t/orbPeriod)],[0]])
-		satPosMat.append((R2*(R1*v)).T)
-	satPath = np.stack(satPosMat)
-	print(satPath)
-	return satPath
 def plotEarth(ax,tof,mps):
 	times = range(int(tof*mps))
 	earthMovement = []
@@ -153,15 +137,10 @@ def meshTolines(a,b,c):
 				r.append(c[long+1,lat])
 				o.append(c[long,lat])
 				r.append(c[long,lat+1])
-	
 	return (np.stack(m),np.stack(n),np.stack(o),np.stack(p),np.stack(q),np.stack(r))
 def update_artists(frames,artists):
 	x,y,z,u,v,w,a,b,c = frames
-	num_lines = len(a)
 	m,n,o,p,q,r = meshTolines(a,b,c)
-	print(m)
-	mid = int(num_lines/2)
-	#m,n,o,p,q,r = (a[0:mid],b[0:mid],c[0:mid],a[mid:num_lines],b[mid:num_lines],c[mid:num_lines])
 	temp = np.array([x,y,z,u,v,w]).reshape(6,-1)
 	qSegs = [[[x,y,z],[u,v,w]]for x,y,z,u,v,w in zip(*temp.tolist())]
 	temp = np.array([m,n,o,p,q,r]).reshape(6,-1)
@@ -173,7 +152,6 @@ def frame_iter(from_second, until_second):
 	for t in range(from_second, until_second):
 		x,y,z,u,v,w,a,b,c = compute_segs(t)
 		yield(x,y,z,u,v,w,a,b,c)
-
 init = partial(init_fig, fig=fig, ax=ax, artists=artists)
 step = partial(frame_iter, from_second=0, until_second=int(tof*mps))
 update = partial(update_artists, artists=artists)
