@@ -37,9 +37,34 @@ def getSatPos(args):
 	x = math.cos(ra_week) * xtemp - math.sin(ra_week) * y
 	y = math.sin(ra_week) * xtemp + math.cos(ra_week) * y
 	return [satID,x,y,z]
+def meshTolines(a,b,c):
+	m,n,o,p,q,r = ([],[],[],[],[],[])
+	for long , elem in enumerate(a):
+		for lat, elem in enumerate(a[long]):
+			if(long<len(a)-1 and lat <len(a[long])-1):
+				m.append(a[long,lat])
+				p.append(a[long+1,lat])
+				m.append(a[long,lat])
+				p.append(a[long,lat+1])
+	for long , elem in enumerate(b):
+		for lat, elem in enumerate(b[long]):
+			if(long<len(b)-1 and lat <len(b[long])-1):
+				n.append(b[long,lat])
+				q.append(b[long+1,lat])
+				n.append(b[long,lat])
+				q.append(b[long,lat+1])
+	for long , elem in enumerate(c):
+		for lat, elem in enumerate(c[long]):
+			if(long<len(c)-1 and lat <len(c[long])-1):
+				o.append(c[long,lat])
+				r.append(c[long+1,lat])
+				o.append(c[long,lat])
+				r.append(c[long,lat+1])
+	return (np.stack(m),np.stack(n),np.stack(o),np.stack(p),np.stack(q),np.stack(r))
 def plotEarth(ax,tof,mps):
 	times = range(int(tof*mps))
 	earthMovement = []
+	earth_segs = []
 	for t in times:
 		c, s = np.cos((t/mps)*ROTATION_EARTH), np.sin((t/mps)*ROTATION_EARTH)
 		R = np.matrix([[c, s, 0], [-s, c, 0], [0, 0, 1]])
@@ -49,8 +74,8 @@ def plotEarth(ax,tof,mps):
 		z = RADIUS_EARTH*np.cos(v)
 		preImage = [x,y,z]
 		postImage = [x*R[0,0]+y*R[0,1],x*R[1,0]+y*R[1,1],z]
-		earthMovement.append(postImage)
-	return np.stack(earthMovement)
+		earth_segs.append(meshTolines(postImage[0],postImage[1],postImage[2]))
+	return np.stack(earth_segs)
 def plotAntenna(ax,tof,mps,ant):
 	times = range(int(tof*mps))
 	antennaMovement = []
@@ -89,10 +114,9 @@ sigStr = 1.5
 Nfrm = 240
 fps = 24
 def compute_segs(t):
-
-	a,b,c = (earthMotion[t,0],earthMotion[t,1],earthMotion[t,2])
+	m,n,o,p,q,r = (earthMotion[t,0],earthMotion[t,1],earthMotion[t,2],earthMotion[t,3],earthMotion[t,4],earthMotion[t,5])
 	x,y,z,u,v,w = (antMotion[t,0],antMotion[t,1],antMotion[t,2],sigStr*antMotion[t,0],sigStr*antMotion[t,1],sigStr*antMotion[t,2])
-	return x,y,z,u,v,w,a,b,c
+	return x,y,z,u,v,w,m,n,o,p,q,r
 
 Artists = namedtuple("Artists", ("wireframe", "quiver"))
 
@@ -114,33 +138,8 @@ def init_fig(fig,ax,artists):
 	ax.set_zlim([-3*RADIUS_EARTH,3*RADIUS_EARTH])
 	plotSats(ax,satCoords)
 	return artists
-def meshTolines(a,b,c):
-	m,n,o,p,q,r = ([],[],[],[],[],[])
-	for long , elem in enumerate(a):
-		for lat, elem in enumerate(a[long]):
-			if(long<len(a)-1 and lat <len(a[long])-1):
-				m.append(a[long,lat])
-				p.append(a[long+1,lat])
-				m.append(a[long,lat])
-				p.append(a[long,lat+1])
-	for long , elem in enumerate(b):
-		for lat, elem in enumerate(b[long]):
-			if(long<len(b)-1 and lat <len(b[long])-1):
-				n.append(b[long,lat])
-				q.append(b[long+1,lat])
-				n.append(b[long,lat])
-				q.append(b[long,lat+1])
-	for long , elem in enumerate(c):
-		for lat, elem in enumerate(c[long]):
-			if(long<len(c)-1 and lat <len(c[long])-1):
-				o.append(c[long,lat])
-				r.append(c[long+1,lat])
-				o.append(c[long,lat])
-				r.append(c[long,lat+1])
-	return (np.stack(m),np.stack(n),np.stack(o),np.stack(p),np.stack(q),np.stack(r))
 def update_artists(frames,artists):
-	x,y,z,u,v,w,a,b,c = frames
-	m,n,o,p,q,r = meshTolines(a,b,c)
+	x,y,z,u,v,w,m,n,o,p,q,r = frames
 	temp = np.array([x,y,z,u,v,w]).reshape(6,-1)
 	qSegs = [[[x,y,z],[u,v,w]]for x,y,z,u,v,w in zip(*temp.tolist())]
 	temp = np.array([m,n,o,p,q,r]).reshape(6,-1)
@@ -150,8 +149,8 @@ def update_artists(frames,artists):
 	return artists
 def frame_iter(from_second, until_second):
 	for t in range(from_second, until_second):
-		x,y,z,u,v,w,a,b,c = compute_segs(t)
-		yield(x,y,z,u,v,w,a,b,c)
+		x,y,z,u,v,w,m,n,o,p,q,r = compute_segs(t)
+		yield(x,y,z,u,v,w,m,n,o,p,q,r)
 init = partial(init_fig, fig=fig, ax=ax, artists=artists)
 step = partial(frame_iter, from_second=0, until_second=int(tof*mps))
 update = partial(update_artists, artists=artists)
