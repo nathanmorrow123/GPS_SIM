@@ -1,10 +1,13 @@
 #Nathan Morrow AFIT Fall 2023
-#All GPS data is downloaded from NAVCEN
+#All GPS data is downloaded from NAVCE
 #https://www.navcen.uscg.gov/gps-nanus-almanacs-opsadvisories-sof
 
 from matplotlib import pyplot as plt
 import matplotlib as mpl
 import matplotlib.animation as animation
+from collections import namedtuple
+from functools import partial
+import itertools
 import numpy as np
 import time
 import math
@@ -70,6 +73,7 @@ def plotAntenna(ax,tof,mps,ant):
 	antCart = sphericalTocartesian(ant)
 	for t in times:
 		ant[2]=-1*ROTATION_EARTH*t/mps
+		antCart = sphericalTocartesian(ant)
 		antennaMovement.append([antCart[0],antCart[1],antCart[2]])
 	return np.stack(antennaMovement)
 def plotSats(ax,satCoords):
@@ -85,7 +89,7 @@ def sphericalTocartesian(sCoords): #sCoords (rad,theta,phi)
 ##Void Run Method for simulation
 #Create Antenna (radius,theta,phi) Starting Antenna Position
 tof =  86400 # in seconds
-mps =  1/24 # Number of Simulatred Location points per second
+mps =  1/360 # Number of Simulatred Location points per second
 [constData,activeSats]=yuma_decode.gatherData()
 satCoords = []
 for satData in constData:
@@ -95,40 +99,99 @@ ant = [RADIUS_EARTH,np.radians(ANTENNA_LOCATION[0]),np.radians(ANTENNA_LOCATION[
 plt.style.use('dark_background')
 fig = plt.figure()
 ax = fig.add_subplot(111,projection='3d')
-ax.set_xlabel("X axis")
-ax.set_ylabel("Y Axis")
-ax.set_zlabel("Z Axis")
-#ax.grid(False)
-ax.xaxis.set_pane_color((.1, .1, .1, .1))
-ax.yaxis.set_pane_color((.1, .1, .1, .1))
-ax.zaxis.set_pane_color((.1, .1, .1, .1))
-ax.set_xlim([-3*RADIUS_EARTH,3*RADIUS_EARTH])
-ax.set_ylim([-3*RADIUS_EARTH,3*RADIUS_EARTH])
-ax.set_zlim([-3*RADIUS_EARTH,3*RADIUS_EARTH])
 earthMotion = plotEarth(ax,tof,mps)
 antMotion = plotAntenna(ax,tof,mps,ant)
-sigStr = 1.2
-Nfrm = 3600
-fps = 60
-wframe = None
-quiver = None
-def init():
-	t=0
-	plotAntenna(ax,tof,mps,ant)
-	return (ax.quiver(antMotion[t,0],antMotion[t,1],antMotion[t,2],sigStr*antMotion[t,0],sigStr*antMotion[t,1],sigStr*antMotion[t,2],color = 'green'),ax.plot_wireframe(earthMotion[t,0], earthMotion[t,1], earthMotion[t,2], color="b"))#normal)
-def update(t):
-	global wframe
-	global quiver
-	# If a line collection is already remove it before drawing.
-	if wframe:
-		ax.collections.remove(wframe)
-	if quiver:
-		ax.collections.remove(quiver)
-	quiver = ax.quiver(antMotion[t,0],antMotion[t,1],antMotion[t,2],sigStr*antMotion[t,0],sigStr*antMotion[t,1],sigStr*antMotion[t,2],color = 'green')#normal
-	wframe = ax.plot_wireframe(earthMotion[t,0], earthMotion[t,1], earthMotion[t,2], color="b")
-ani = animation.FuncAnimation(fig, update, interval=10000/fps,blit=True,init_func=init)
+sigStr = 1.5
+Nfrm = 240
+fps = 24
+def compute_segs(t):
+
+	a,b,c = (earthMotion[t,0],earthMotion[t,1],earthMotion[t,2])
+	x,y,z,u,v,w = (antMotion[t,0],antMotion[t,1],antMotion[t,2],sigStr*antMotion[t,0],sigStr*antMotion[t,1],sigStr*antMotion[t,2])
+	return x,y,z,u,v,w,a,b,c
+
+Artists = namedtuple("Artists", ("wireframe", "quiver"))
+
+artists = Artists(
+	ax.plot_wireframe(np.array([[]]),np.array([[]]),np.array([[]]),color="blue"),
+	ax.quiver([],[],[],[],[],[],color="green"),
+)
+
+def init_fig(fig,ax,artists):
+	ax.set_xlabel("X axis")
+	ax.set_ylabel("Y Axis")
+	ax.set_zlabel("Z Axis")
+	#ax.grid(False)
+	ax.xaxis.set_pane_color((.1, .1, .1, .1))
+	ax.yaxis.set_pane_color((.1, .1, .1, .1))
+	ax.zaxis.set_pane_color((.1, .1, .1, .1))
+	ax.set_xlim([-3*RADIUS_EARTH,3*RADIUS_EARTH])
+	ax.set_ylim([-3*RADIUS_EARTH,3*RADIUS_EARTH])
+	ax.set_zlim([-3*RADIUS_EARTH,3*RADIUS_EARTH])
+	plotSats(ax,satCoords)
+	return artists
+def meshTolines(a,b,c):
+	m,n,o,p,q,r = ([],[],[],[],[],[])
+	for long , elem in enumerate(a):
+		for lat, elem in enumerate(a[long]):
+			if(long<len(a)-1 and lat <len(a[long])-1):
+				m.append(a[long,lat])
+				p.append(a[long+1,lat])
+				m.append(a[long,lat])
+				p.append(a[long,lat+1])
+	for long , elem in enumerate(b):
+		for lat, elem in enumerate(b[long]):
+			if(long<len(b)-1 and lat <len(b[long])-1):
+				n.append(b[long,lat])
+				q.append(b[long+1,lat])
+				n.append(b[long,lat])
+				q.append(b[long,lat+1])
+	for long , elem in enumerate(c):
+		for lat, elem in enumerate(c[long]):
+			if(long<len(c)-1 and lat <len(c[long])-1):
+				o.append(c[long,lat])
+				r.append(c[long+1,lat])
+				o.append(c[long,lat])
+				r.append(c[long,lat+1])
+	
+	return (np.stack(m),np.stack(n),np.stack(o),np.stack(p),np.stack(q),np.stack(r))
+def update_artists(frames,artists):
+	x,y,z,u,v,w,a,b,c = frames
+	num_lines = len(a)
+	m,n,o,p,q,r = meshTolines(a,b,c)
+	print(m)
+	mid = int(num_lines/2)
+	#m,n,o,p,q,r = (a[0:mid],b[0:mid],c[0:mid],a[mid:num_lines],b[mid:num_lines],c[mid:num_lines])
+	temp = np.array([x,y,z,u,v,w]).reshape(6,-1)
+	qSegs = [[[x,y,z],[u,v,w]]for x,y,z,u,v,w in zip(*temp.tolist())]
+	temp = np.array([m,n,o,p,q,r]).reshape(6,-1)
+	wSegs = [[[m,n,o],[p,q,r]]for m,n,o,p,q,r in zip(*temp.tolist())]
+	artists.wireframe.set_segments(wSegs)
+	artists.quiver.set_segments(qSegs)
+	return artists
+def frame_iter(from_second, until_second):
+	for t in range(from_second, until_second):
+		x,y,z,u,v,w,a,b,c = compute_segs(t)
+		yield(x,y,z,u,v,w,a,b,c)
+
+init = partial(init_fig, fig=fig, ax=ax, artists=artists)
+step = partial(frame_iter, from_second=0, until_second=int(tof*mps))
+update = partial(update_artists, artists=artists)
+ani = animation.FuncAnimation(
+	fig=fig, 
+	func=update, 
+	frames = step,
+	interval=1000/fps,
+	blit=False,
+	init_func=init,
+	save_count=len(list(step())),
+    repeat_delay=0,
+)
 
 plt.show()
-fn = 'plot_wireframe_funcanimation'
-ani.save(fn+'.mp4',writer='ffmpeg',fps=fps)
-ani.save(fn+'.gif',writer='imagemagick',fps=fps)
+ani.save(
+  filename='/tmp/gps_sim.mp4',
+  fps=24,
+  extra_args=['-vcodec', 'libx264'],
+  dpi=300,
+)
