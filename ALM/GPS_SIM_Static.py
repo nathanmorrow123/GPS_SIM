@@ -19,10 +19,32 @@ EARTH_MASS=5.97219e24 #kg
 ANTENNA_LOCATION = [39.765659548785884, -84.19151722210734] #Latitude/Longitude in degrees
 #Assuming antenna is normal to earth surface
 
-def getSatPos(args):
+def getSatPos(args, t):
+	"""
+    Calculate the position of a satellite in Cartesian coordinates.
+
+    Parameters:
+    args (list): List containing satellite parameters.
+
+    Returns:
+    list: Satellite ID and its x, y, z coordinates.
+    """
 	[satID,health,e,toa,inc,ascRate,sqrt_a,ra_week,w,E,Af0,Af1] = args
+	t = t + toa # Sync Animation to TOA
 	a = sqrt_a**2
 	b = math.sqrt(a**2*(1-e**2)) #https://jtauber.github.io/orbits/019.html
+	n = math.sqrt(GRAV_CONSTANT * EARTH_MASS / a**3)  # Mean motion
+	M0 = E - e * math.sin(E)  # Mean anomaly at reference time
+	M = M0 + n * (t - toa)  # Mean anomaly at time t
+
+    # Solve Kepler's equation for Eccentric Anomaly (E)
+	E_new = M
+	for _ in range(10):  # Iterate to solve for E
+		E_new = M + e * math.sin(E_new)
+
+    # True anomaly
+	v = 2 * math.atan2(math.sqrt(1 + e) * math.sin(E_new / 2), math.sqrt(1 - e) * math.cos(E_new / 2))
+	
 	#position in the orbit plane
 	p = a*(math.cos(E)-e) #https://en.wikipedia.org/wiki/Kepler%27s_equation
 	q = b*math.sin(E)
@@ -38,6 +60,17 @@ def getSatPos(args):
 	y = math.sin(ra_week) * xtemp + math.cos(ra_week) * y
 	return [satID,x,y,z]
 def meshTolines(a,b,c):
+	"""
+    Convert mesh grid data to line segments for 3D plotting.
+
+    Parameters:
+    a (ndarray): X coordinates of the mesh grid.
+    b (ndarray): Y coordinates of the mesh grid.
+    c (ndarray): Z coordinates of the mesh grid.
+
+    Returns:
+    tuple: Arrays of start and end points for line segments.
+    """
 	m,n,o,p,q,r = ([],[],[],[],[],[])
 	for long , elem in enumerate(a):
 		for lat, elem in enumerate(a[long]):
@@ -62,6 +95,17 @@ def meshTolines(a,b,c):
 				r.append(c[long,lat+1])
 	return (np.stack(m),np.stack(n),np.stack(o),np.stack(p),np.stack(q),np.stack(r))
 def plotEarth(ax,tof,mps):
+	"""
+    Plot the Earth rotation as line segments for the given time of flight.
+
+    Parameters:
+    ax (Axes3D): Matplotlib 3D axes object.
+    tof (float): Time of flight in seconds.
+    mps (float): Number of simulated location points per second.
+
+    Returns:
+    ndarray: Array of line segments for each time step.
+    """
 	times = range(int(tof*mps))
 	earthMovement = []
 	earth_segs = []
@@ -77,6 +121,18 @@ def plotEarth(ax,tof,mps):
 		earth_segs.append(meshTolines(postImage[0],postImage[1],postImage[2]))
 	return np.stack(earth_segs)
 def plotAntenna(ax,tof,mps,ant):
+	"""
+    Plot the antenna movement as it rotates with the Earth.
+
+    Parameters:
+    ax (Axes3D): Matplotlib 3D axes object.
+    tof (float): Time of flight in seconds.
+    mps (float): Number of simulated location points per second.
+    ant (list): Antenna position in spherical coordinates (radius, theta, phi).
+
+    Returns:
+    ndarray: Array of antenna positions for each time step.
+    """
 	times = range(int(tof*mps))
 	antennaMovement = []
 	antCart = sphericalTocartesian(ant)
@@ -86,19 +142,83 @@ def plotAntenna(ax,tof,mps,ant):
 		antennaMovement.append([antCart[0],antCart[1],antCart[2]])
 	return np.stack(antennaMovement)
 def plotSats(ax,satCoords):
+	"""
+    Plot the satellite positions on the 3D plot.
+
+    Parameters:
+    ax (Axes3D): Matplotlib 3D axes object.
+    satCoords (ndarray): Array of satellite coordinates.
+
+    Returns:
+    None
+    """
 	for satCoord in satCoords:
 		ax.scatter(satCoord[1],satCoord[2],satCoord[3],c='green',marker='.',s=20)
 		ax.text(satCoord[1],satCoord[2],satCoord[3],int(satCoord[0]))
+
 def sphericalTocartesian(sCoords): #sCoords (rad,theta,phi)
+	"""
+    Convert spherical coordinates to Cartesian coordinates.
+
+    Parameters:
+    sCoords (list): Spherical coordinates [radius, theta, phi].
+
+    Returns:
+    list: Cartesian coordinates [x, y, z].
+	"""
 	cartX=sCoords[0]*math.sin(sCoords[1])*math.cos(sCoords[2])
 	cartY=sCoords[0]*math.sin(sCoords[1])*math.sin(sCoords[2])
 	cartZ=sCoords[0]*math.cos(sCoords[1])
 	return [cartX,cartY,cartZ]
+def init_fig(fig,ax,artists):
+	"""
+    Initialize the 3D plot with labels and settings.
+
+    Parameters:
+    fig (Figure): Matplotlib figure object.
+    ax (Axes3D): Matplotlib 3D axes object.
+    artists (Artists): Named tuple containing the wireframe and quiver artists.
+
+    Returns:
+    Artists: The updated artists.
+    """
+	ax.set_xlabel("X axis")
+	ax.set_ylabel("Y Axis")
+	ax.set_zlabel("Z Axis")
+	#ax.grid(False)
+	ax.xaxis.set_pane_color((.1, .1, .1, .1))
+	ax.yaxis.set_pane_color((.1, .1, .1, .1))
+	ax.zaxis.set_pane_color((.1, .1, .1, .1))
+	ax.set_xlim([-3*RADIUS_EARTH,3*RADIUS_EARTH])
+	ax.set_ylim([-3*RADIUS_EARTH,3*RADIUS_EARTH])
+	ax.set_zlim([-3*RADIUS_EARTH,3*RADIUS_EARTH])
+	plotSats(ax,satCoords[1:-1]) # Skip the first one it's bad data
+	return artists
+
+def update_artists(frames,artists):
+	"""
+    Update the artists for each animation frame.
+
+    Parameters:
+    frames (tuple): Frame data containing segments for wireframe and quiver plots.
+    artists (Artists): Named tuple containing the wireframe and quiver artists.
+
+    Returns:
+    Artists: The updated artists.
+    """
+	x,y,z,u,v,w,m,n,o,p,q,r = frames
+	temp = np.array([x,y,z,u,v,w]).reshape(6,-1)
+	qSegs = [[[x,y,z],[u,v,w]]for x,y,z,u,v,w in zip(*temp.tolist())]
+	temp = np.array([m,n,o,p,q,r]).reshape(6,-1)
+	wSegs = [[[m,n,o],[p,q,r]]for m,n,o,p,q,r in zip(*temp.tolist())]
+	artists.wireframe.set_segments(wSegs)
+	artists.quiver.set_segments(qSegs)
+	return artists
 
 ##Void Run Method for simulation
 #Create Antenna (radius,theta,phi) Starting Antenna Position
 tof =  86400 # in seconds
-mps =  1/360 # Number of Simulatred Location points per second
+mps =  1/360 # Number of Simulated Location points per second
 [constData,activeSats]=yuma_decode.gatherData()
 satCoords = []
 for satData in constData:
@@ -125,28 +245,7 @@ artists = Artists(
 	ax.quiver([],[],[],[],[],[],color="green"),
 )
 
-def init_fig(fig,ax,artists):
-	ax.set_xlabel("X axis")
-	ax.set_ylabel("Y Axis")
-	ax.set_zlabel("Z Axis")
-	#ax.grid(False)
-	ax.xaxis.set_pane_color((.1, .1, .1, .1))
-	ax.yaxis.set_pane_color((.1, .1, .1, .1))
-	ax.zaxis.set_pane_color((.1, .1, .1, .1))
-	ax.set_xlim([-3*RADIUS_EARTH,3*RADIUS_EARTH])
-	ax.set_ylim([-3*RADIUS_EARTH,3*RADIUS_EARTH])
-	ax.set_zlim([-3*RADIUS_EARTH,3*RADIUS_EARTH])
-	plotSats(ax,satCoords)
-	return artists
-def update_artists(frames,artists):
-	x,y,z,u,v,w,m,n,o,p,q,r = frames
-	temp = np.array([x,y,z,u,v,w]).reshape(6,-1)
-	qSegs = [[[x,y,z],[u,v,w]]for x,y,z,u,v,w in zip(*temp.tolist())]
-	temp = np.array([m,n,o,p,q,r]).reshape(6,-1)
-	wSegs = [[[m,n,o],[p,q,r]]for m,n,o,p,q,r in zip(*temp.tolist())]
-	artists.wireframe.set_segments(wSegs)
-	artists.quiver.set_segments(qSegs)
-	return artists
+
 def frame_iter(from_second, until_second):
 	for t in range(from_second, until_second):
 		x,y,z,u,v,w,m,n,o,p,q,r = compute_segs(t)
@@ -159,7 +258,7 @@ ani = animation.FuncAnimation(
 	func=update, 
 	frames = step,
 	interval=1000/fps,
-	blit=False,
+	blit=True,
 	init_func=init,
 	save_count=len(list(step())),
     repeat_delay=0,
@@ -167,8 +266,7 @@ ani = animation.FuncAnimation(
 
 plt.show()
 ani.save(
-  filename='/tmp/gps_sim.mp4',
-  fps=24,
-  extra_args=['-vcodec', 'libx264'],
+  filename='gps_sim.gif',
+  fps=60,
   dpi=300,
 )
