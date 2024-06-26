@@ -19,7 +19,7 @@ EARTH_MASS=5.97219e24 #kg
 ANTENNA_LOCATION = [39.765659548785884, -84.19151722210734] #Latitude/Longitude in degrees
 #Assuming antenna is normal to earth surface
 
-def getSatPos(args, t):
+def computeSatPos(args, t):
 	"""
     Calculate the position of a satellite in Cartesian coordinates.
 
@@ -29,6 +29,7 @@ def getSatPos(args, t):
     Returns:
     list: Satellite ID and its x, y, z coordinates.
     """
+	print(t)
 	[satID,health,e,toa,inc,ascRate,sqrt_a,ra_week,w,E,Af0,Af1] = args
 	t = t + toa # Sync Animation to TOA
 	a = sqrt_a**2
@@ -45,20 +46,26 @@ def getSatPos(args, t):
     # True anomaly
 	v = 2 * math.atan2(math.sqrt(1 + e) * math.sin(E_new / 2), math.sqrt(1 - e) * math.cos(E_new / 2))
 	
-	#position in the orbit plane
-	p = a*(math.cos(E)-e) #https://en.wikipedia.org/wiki/Kepler%27s_equation
-	q = b*math.sin(E)
-	#rotate by argument of periapsis
-	x = math.cos(w) * p - math.sin(w) * q
-	y = math.sin(w) * p + math.cos(w) * q
-	#rotate by inclination
-	z = math.sin(inc) * y
-	y = math.cos(inc) * y
-	#rotate by longitude of ascending node
-	xtemp = x
-	x = math.cos(ra_week) * xtemp - math.sin(ra_week) * y
-	y = math.sin(ra_week) * xtemp + math.cos(ra_week) * y
-	return [satID,x,y,z]
+	#https://en.wikipedia.org/wiki/Kepler%27s_equation
+	# Position in orbit plane
+	r = a * (1 - e * math.cos(E_new))
+	x_orb = r * math.cos(v)
+	y_orb = r * math.sin(v)
+    
+	# Rotate by argument of periapsis
+	x_prime = math.cos(w) * x_orb - math.sin(w) * y_orb
+	y_prime = math.sin(w) * x_orb + math.cos(w) * y_orb
+
+    # Rotate by inclination
+	z_prime = math.sin(inc) * y_prime
+	y_final = math.cos(inc) * y_prime
+
+    # Rotate by longitude of ascending node
+	xtemp = x_prime
+	x_final = math.cos(ra_week) * xtemp - math.sin(ra_week) * y_final
+	y_final = math.sin(ra_week) * xtemp + math.cos(ra_week) * y_final
+	return [satID, x_final, y_final, z_prime]
+
 def meshTolines(a,b,c):
 	"""
     Convert mesh grid data to line segments for 3D plotting.
@@ -94,7 +101,8 @@ def meshTolines(a,b,c):
 				o.append(c[long,lat])
 				r.append(c[long,lat+1])
 	return (np.stack(m),np.stack(n),np.stack(o),np.stack(p),np.stack(q),np.stack(r))
-def getAllEarthPos(times):
+
+def computeAllEarthPos(times):
 	"""
     Plot the Earth rotation as line segments for the given time of flight.
 
@@ -118,7 +126,8 @@ def getAllEarthPos(times):
 		postImage = [x*R[0,0]+y*R[0,1],x*R[1,0]+y*R[1,1],z]
 		earth_segs.append(meshTolines(postImage[0],postImage[1],postImage[2]))
 	return np.stack(earth_segs)
-def getAllAntPos(times,ant):
+
+def computeAllAntPos(times,ant):
 	"""
     Plot the antenna movement as it rotates with the Earth.
 
@@ -150,8 +159,8 @@ def plotSats(ax,satCoords,t):
     None
     """
 	for satCoord in satCoords:
-		ax.scatter(satCoord[t,1],satCoord[t,2],satCoord[t,3],c='green',marker='.',s=20)
-		ax.text(satCoord[t,1],satCoord[t,2],satCoord[t,3],int(satCoord[t,0]))
+		ax.scatter(satCoord[1],satCoord[2],satCoord[3],c='green',marker='.',s=20)
+		ax.text(satCoord[1],satCoord[2],satCoord[3],int(satCoord[0]))
 
 def sphericalTocartesian(sCoords): #sCoords (rad,theta,phi)
 	"""
@@ -189,7 +198,7 @@ def init_fig(ax,artists,satCoords):
 	ax.set_xlim([-3*RADIUS_EARTH,3*RADIUS_EARTH])
 	ax.set_ylim([-3*RADIUS_EARTH,3*RADIUS_EARTH])
 	ax.set_zlim([-3*RADIUS_EARTH,3*RADIUS_EARTH])
-	plotSats(ax,satCoords[1:-1]) # Skip the first one it's bad data
+	plotSats(ax,satCoords[1:-1],0) # Skip the first one it's bad data
 	return artists
 
 def update_artists(frames,artists):
@@ -217,39 +226,45 @@ def update_artists(frames,artists):
 
 	return artists
 
-def compute_segs(t):
+def get_earth_segs(t):
 	sigStr = 1.5
 	m,n,o,p,q,r = (earthMotion[t,0],earthMotion[t,1],earthMotion[t,2],earthMotion[t,3],earthMotion[t,4],earthMotion[t,5])
 	x,y,z,u,v,w = (antMotion[t,0],antMotion[t,1],antMotion[t,2],sigStr*antMotion[t,0],sigStr*antMotion[t,1],sigStr*antMotion[t,2])
 	return x,y,z,u,v,w,m,n,o,p,q,r
+
+def get_satPos(t):
+	satCoords = satCoordsOverTime[t]
+
 def computeAllSatPos(constData,times):
 	satCoords = []
-	satCoordsOverTime = []
+	satCoordsOverTime = [] 
 	for t in times:
 		for satData in constData:
-			satCoords.append(getSatPos(satData,t))
-		satCoords = np.stack(satCoords)
+			satCoords.append(computeSatPos(satData,t))
+		np.stack(satCoords)
 		satCoordsOverTime.append(satCoords)
-	satCoordsOverTime = np.stack(satCoordsOverTime)
-	return satCoordsOverTime
+	np.stack(satCoordsOverTime)
+	return np.array(satCoordsOverTime)
 def frame_iter(from_second, until_second):
 	# Helper funciton in animation
 	for t in range(from_second, until_second):
-		x,y,z,u,v,w,m,n,o,p,q,r = compute_segs(t)
+		x,y,z,u,v,w,m,n,o,p,q,r = get_earth_segs(t)
 		earth_segs = [x,y,z,u,v,w,m,n,o,p,q,r]
-		satPos = compute_satPos(t)
+		satPos = get_satPos(t)
 		yield(earth_segs,satPos)
 
 ##Void Run Method for simulation
 #Create Antenna (radius,theta,phi) Starting Antenna Position
 tof =  86400 # in seconds
 mps =  1/360 # Number of Simulated Location points per second
+tof = 10
+mps = 1
 times = range(int(tof*mps)) # Array of time steps
 [constData,activeSats]=yuma_decode.gatherData()
 satCoordsOverTime = computeAllSatPos(constData, times)
 ant = [RADIUS_EARTH,np.radians(ANTENNA_LOCATION[0]),np.radians(ANTENNA_LOCATION[1])]
-earthMotion = getAllEarthPos(times)
-antMotion = getAllAntPos(times,ant)
+earthMotion = computeAllEarthPos(times)
+antMotion = computeAllAntPos(times,ant)
 Nfrm = 240
 fps = 24
 
@@ -277,8 +292,7 @@ ani = animation.FuncAnimation(
 	save_count=len(list(step())),
     repeat_delay=0,
 )
-
-plt.show()
+#plt.show()
 ani.save(
   filename='gps_sim.gif',
   fps=60,

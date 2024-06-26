@@ -12,7 +12,7 @@ def gatherData():
     opsadvisory = open("current_opsadvisory.txt", "r")
     content1 = yuma.readlines()
     content2 = opsadvisory.readlines()
-    rows = 32
+    rows = 31
     cols = 12
     constData=np.zeros((rows,cols))
     satID = 0
