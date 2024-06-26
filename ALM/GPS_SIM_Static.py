@@ -94,7 +94,7 @@ def meshTolines(a,b,c):
 				o.append(c[long,lat])
 				r.append(c[long,lat+1])
 	return (np.stack(m),np.stack(n),np.stack(o),np.stack(p),np.stack(q),np.stack(r))
-def plotEarth(ax,tof,mps):
+def getAllEarthPos(times):
 	"""
     Plot the Earth rotation as line segments for the given time of flight.
 
@@ -106,8 +106,6 @@ def plotEarth(ax,tof,mps):
     Returns:
     ndarray: Array of line segments for each time step.
     """
-	times = range(int(tof*mps))
-	earthMovement = []
 	earth_segs = []
 	for t in times:
 		c, s = np.cos((t/mps)*ROTATION_EARTH), np.sin((t/mps)*ROTATION_EARTH)
@@ -120,7 +118,7 @@ def plotEarth(ax,tof,mps):
 		postImage = [x*R[0,0]+y*R[0,1],x*R[1,0]+y*R[1,1],z]
 		earth_segs.append(meshTolines(postImage[0],postImage[1],postImage[2]))
 	return np.stack(earth_segs)
-def plotAntenna(ax,tof,mps,ant):
+def getAllAntPos(times,ant):
 	"""
     Plot the antenna movement as it rotates with the Earth.
 
@@ -133,7 +131,6 @@ def plotAntenna(ax,tof,mps,ant):
     Returns:
     ndarray: Array of antenna positions for each time step.
     """
-	times = range(int(tof*mps))
 	antennaMovement = []
 	antCart = sphericalTocartesian(ant)
 	for t in times:
@@ -141,7 +138,7 @@ def plotAntenna(ax,tof,mps,ant):
 		antCart = sphericalTocartesian(ant)
 		antennaMovement.append([antCart[0],antCart[1],antCart[2]])
 	return np.stack(antennaMovement)
-def plotSats(ax,satCoords):
+def plotSats(ax,satCoords,t):
 	"""
     Plot the satellite positions on the 3D plot.
 
@@ -153,8 +150,8 @@ def plotSats(ax,satCoords):
     None
     """
 	for satCoord in satCoords:
-		ax.scatter(satCoord[1],satCoord[2],satCoord[3],c='green',marker='.',s=20)
-		ax.text(satCoord[1],satCoord[2],satCoord[3],int(satCoord[0]))
+		ax.scatter(satCoord[t,1],satCoord[t,2],satCoord[t,3],c='green',marker='.',s=20)
+		ax.text(satCoord[t,1],satCoord[t,2],satCoord[t,3],int(satCoord[t,0]))
 
 def sphericalTocartesian(sCoords): #sCoords (rad,theta,phi)
 	"""
@@ -170,7 +167,7 @@ def sphericalTocartesian(sCoords): #sCoords (rad,theta,phi)
 	cartY=sCoords[0]*math.sin(sCoords[1])*math.sin(sCoords[2])
 	cartZ=sCoords[0]*math.cos(sCoords[1])
 	return [cartX,cartY,cartZ]
-def init_fig(fig,ax,artists):
+def init_fig(ax,artists,satCoords):
 	"""
     Initialize the 3D plot with labels and settings.
 
@@ -206,51 +203,68 @@ def update_artists(frames,artists):
     Returns:
     Artists: The updated artists.
     """
-	x,y,z,u,v,w,m,n,o,p,q,r = frames
+	earth_segs,satCoord = frames
+	x,y,z,u,v,w,m,n,o,p,q,r = earth_segs
 	temp = np.array([x,y,z,u,v,w]).reshape(6,-1)
 	qSegs = [[[x,y,z],[u,v,w]]for x,y,z,u,v,w in zip(*temp.tolist())]
 	temp = np.array([m,n,o,p,q,r]).reshape(6,-1)
 	wSegs = [[[m,n,o],[p,q,r]]for m,n,o,p,q,r in zip(*temp.tolist())]
 	artists.wireframe.set_segments(wSegs)
 	artists.quiver.set_segments(qSegs)
+	artists.satPos.set_offsets(np.c_(satCoord[1],satCoord[2],satCoord[3]))
+	artists.satPrn.set_Offsets(np.c_(satCoord[1],satCoord[2],satCoord[3]))
+	artists.satPrn.set_text(satCoord[0])
+
 	return artists
+
+def compute_segs(t):
+	sigStr = 1.5
+	m,n,o,p,q,r = (earthMotion[t,0],earthMotion[t,1],earthMotion[t,2],earthMotion[t,3],earthMotion[t,4],earthMotion[t,5])
+	x,y,z,u,v,w = (antMotion[t,0],antMotion[t,1],antMotion[t,2],sigStr*antMotion[t,0],sigStr*antMotion[t,1],sigStr*antMotion[t,2])
+	return x,y,z,u,v,w,m,n,o,p,q,r
+def computeAllSatPos(constData,times):
+	satCoords = []
+	satCoordsOverTime = []
+	for t in times:
+		for satData in constData:
+			satCoords.append(getSatPos(satData,t))
+		satCoords = np.stack(satCoords)
+		satCoordsOverTime.append(satCoords)
+	satCoordsOverTime = np.stack(satCoordsOverTime)
+	return satCoordsOverTime
+def frame_iter(from_second, until_second):
+	# Helper funciton in animation
+	for t in range(from_second, until_second):
+		x,y,z,u,v,w,m,n,o,p,q,r = compute_segs(t)
+		earth_segs = [x,y,z,u,v,w,m,n,o,p,q,r]
+		satPos = compute_satPos(t)
+		yield(earth_segs,satPos)
 
 ##Void Run Method for simulation
 #Create Antenna (radius,theta,phi) Starting Antenna Position
 tof =  86400 # in seconds
 mps =  1/360 # Number of Simulated Location points per second
+times = range(int(tof*mps)) # Array of time steps
 [constData,activeSats]=yuma_decode.gatherData()
-satCoords = []
-for satData in constData:
-	satCoords.append(getSatPos(satData))
-satCoords = np.stack(satCoords)
+satCoordsOverTime = computeAllSatPos(constData, times)
 ant = [RADIUS_EARTH,np.radians(ANTENNA_LOCATION[0]),np.radians(ANTENNA_LOCATION[1])]
+earthMotion = getAllEarthPos(times)
+antMotion = getAllAntPos(times,ant)
+Nfrm = 240
+fps = 24
+
+Artists = namedtuple("Artists", ("wireframe", "quiver",'satPos','satPrn'))
 plt.style.use('dark_background')
 fig = plt.figure()
 ax = fig.add_subplot(111,projection='3d')
-earthMotion = plotEarth(ax,tof,mps)
-antMotion = plotAntenna(ax,tof,mps,ant)
-sigStr = 1.5
-Nfrm = 240
-fps = 24
-def compute_segs(t):
-	m,n,o,p,q,r = (earthMotion[t,0],earthMotion[t,1],earthMotion[t,2],earthMotion[t,3],earthMotion[t,4],earthMotion[t,5])
-	x,y,z,u,v,w = (antMotion[t,0],antMotion[t,1],antMotion[t,2],sigStr*antMotion[t,0],sigStr*antMotion[t,1],sigStr*antMotion[t,2])
-	return x,y,z,u,v,w,m,n,o,p,q,r
-
-Artists = namedtuple("Artists", ("wireframe", "quiver"))
-
 artists = Artists(
 	ax.plot_wireframe(np.array([[]]),np.array([[]]),np.array([[]]),color="blue"),
 	ax.quiver([],[],[],[],[],[],color="green"),
+	ax.scatter([],[],[],c='green',marker='.',s=20),
+	ax.text([],[],[],[]),
 )
 
-
-def frame_iter(from_second, until_second):
-	for t in range(from_second, until_second):
-		x,y,z,u,v,w,m,n,o,p,q,r = compute_segs(t)
-		yield(x,y,z,u,v,w,m,n,o,p,q,r)
-init = partial(init_fig, fig=fig, ax=ax, artists=artists)
+init = partial(init_fig, ax=ax, artists=artists, satCoords=satCoordsOverTime[0])
 step = partial(frame_iter, from_second=0, until_second=int(tof*mps))
 update = partial(update_artists, artists=artists)
 ani = animation.FuncAnimation(
