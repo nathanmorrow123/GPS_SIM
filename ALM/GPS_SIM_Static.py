@@ -26,28 +26,30 @@ ANTENNA_LOCATION = [
 
 def compute_mean_anomaly(E, e, t, toa, GRAV_CONSTANT, EARTH_MASS):
     a = E**2
-    n = math.sqrt(GRAV_CONSTANT * EARTH_MASS / a**3)  # Mean motion
-    M0 = E - e * math.sin(E)  # Mean anomaly at reference time
+    n = np.sqrt(GRAV_CONSTANT * EARTH_MASS / a**3)  # Mean motion
+    M0 = E - e * np.sin(E)  # Mean anomaly at reference time
     return M0 + n * (t - toa)  # Mean anomaly at time t
 
 
-def solve_keplers_equation(M, E, e, iterations=10):
+def solve_keplers_equation(M, E, e, iterations=10): # https://scicomp.stackexchange.com/questions/40700/solving-keplers-equation-with-newton-raphson-method
     E_prev = E
     p = 1
     i = 0
-    while p >= 0.01:  # Iterate to solve for E
-        E_new = M + e * math.sin(E_prev)
+    while(p>=0.01):  # Iterate to solve for E
+        E_new = E_prev -  (E_prev - np.abs(e) * math.sin(E_prev)- M ) / ( 1 - np.abs(e)*np.cos(E_prev))
         p = np.abs((E_new - E_prev) / E_new)
         E_prev = E_new
+        E_new = E_new
         i += 1
-        #print(f"Current i and p: {i}, {p}")
-    print(f"Iterations required for 0.01 confidence: {i}")
+    print(f'Solved in {i} iterations.')
     return E_new
 
 
 def compute_orbital_position(a, e, E_new):
     r = a * (1 - e * math.cos(E_new))
-    v = np.arccos((np.cos(E_new) - e) / (1 - e * np.cos(E_new)))
+    beta = (e/1+np.sqrt(1-e**2))
+    v = E_new + np.arctan2((beta*np.sin(E_new)),(1-beta*np.cos(E_new))) #https://ui.adsabs.harvard.edu/abs/1973CeMec...7..388B/abstract
+    #v = np.arccos((np.cos(E_new) - e) / (1 - e * np.cos(E_new))) #https://en.wikipedia.org/wiki/True_anomaly less accurate for edge cases
     x_orb = r * math.cos(v)
     y_orb = r * math.sin(v)
     return x_orb, y_orb
@@ -66,7 +68,6 @@ def rotate_position(x_orb, y_orb, w, inc, ra_week):
 def compute_sat_pos(args, t):
     [satID, health, e, toa, inc, ascRate, sqrt_a, ra_week, w, E, Af0, Af1] = args
     t = t + toa  # Sync Animation to TOA
-    print(t)
     a = sqrt_a**2
     M = compute_mean_anomaly(E, e, t, toa, GRAV_CONSTANT, EARTH_MASS)
     E_new = solve_keplers_equation(M, E, e)
@@ -215,14 +216,14 @@ def init_fig(ax, artists, satCoords):
     ax.set_xlabel("X axis")
     ax.set_ylabel("Y Axis")
     ax.set_zlabel("Z Axis")
-    # ax.grid(False)
+    ax.grid(False)
     ax.xaxis.set_pane_color((0.1, 0.1, 0.1, 0.1))
     ax.yaxis.set_pane_color((0.1, 0.1, 0.1, 0.1))
     ax.zaxis.set_pane_color((0.1, 0.1, 0.1, 0.1))
     ax.set_xlim([-3 * RADIUS_EARTH, 3 * RADIUS_EARTH])
     ax.set_ylim([-3 * RADIUS_EARTH, 3 * RADIUS_EARTH])
     ax.set_zlim([-3 * RADIUS_EARTH, 3 * RADIUS_EARTH])
-    plotSats(ax, satCoords)  # Skip the first one it's bad data
+    #plotSats(ax, satCoords)  # Skip the first one it's bad data
     return artists
 
 
@@ -293,41 +294,47 @@ def frame_iter(times):
         yield (earth_segs, satPos)
 
 
-##Void Run Method for simulation
-# Create Antenna (radius,theta,phi) Starting Antenna Position
-tof = 40/60  # Total sim time (Seconds)
-dt = 1/3600  # Time step (seconds)
-times = np.linspace(0, tof, int(tof / dt + 1), endpoint=True)
-[constData, activeSats] = yuma_decode.gatherData()
-satCoordsOverTime = compute_all_sat_pos(constData, times)
-ant = [RADIUS_EARTH, np.radians(ANTENNA_LOCATION[0]), np.radians(ANTENNA_LOCATION[1])]
-earthMotion = computeAllEarthPos(times)
-antMotion = computeAllAntPos(times, ant)
+def main():
+    ##Void Run Method for simulation
+    # Create Antenna (radius,theta,phi) Starting Antenna Position
+    tof = 120 # Total sim time (Seconds)
+    dt = 0.5  # Time step (seconds)
+    times = np.linspace(0, tof, int(tof / dt + 1), endpoint=True)
+    [constData, activeSats] = yuma_decode.gatherData()
+    satCoordsOverTime = compute_all_sat_pos(constData, times)
+    ant = [RADIUS_EARTH, np.radians(ANTENNA_LOCATION[0]), np.radians(ANTENNA_LOCATION[1])]
+    earthMotion = computeAllEarthPos(times)
+    antMotion = computeAllAntPos(times, ant)
 
-Nfrm = int(tof / dt + 1)
-fps = 60
-Artists = namedtuple("Artists", ("wireframe", "quiver", "sat_pos"))
-plt.style.use("dark_background")
-fig = plt.figure()
-ax = fig.add_subplot(111, projection="3d")
-artists = Artists(
-    ax.plot_wireframe(np.array([[]]), np.array([[]]), np.array([[]]), color="blue"),
-    ax.quiver([], [], [], [], [], [], color="green"),
-    ax.scatter([], [], [], c="green", marker=".", s=20),
-)
+    Nfrm = int(tof / dt + 1)
+    fps = 30
+    Artists = namedtuple("Artists", ("wireframe", "quiver", "sat_pos"))
+    plt.style.use("dark_background")
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection="3d")
+    artists = Artists(
+        ax.plot_wireframe(np.array([[]]), np.array([[]]), np.array([[]]), color="blue"),
+        ax.quiver([], [], [], [], [], [], color="green"),
+        ax.scatter([], [], [], c="green", marker=".", s=20),
+    )
 
-init = partial(init_fig, ax=ax, artists=artists, satCoords=satCoordsOverTime[0])
-step = partial(frame_iter, times)
-update = partial(update_artists, artists=artists)
-ani = animation.FuncAnimation(
-    fig=fig,
-    func=update,
-    frames=step,
-    interval=1000 / fps,
-    blit=True,
-    init_func=init,
-    save_count=len(list(step())),
-    repeat_delay=0,
-)
-plt.show()
-ani.save(filename="gps_sim.gif", fps=fps, dpi=100)
+    init = partial(init_fig, ax=ax, artists=artists, satCoords=satCoordsOverTime[0])
+    step = partial(frame_iter, times)
+    update = partial(update_artists, artists=artists)
+    ani = animation.FuncAnimation(
+        fig=fig,
+        func=update,
+        frames=step,
+        interval=1000 / fps,
+        blit=False,
+        init_func=init,
+        save_count=len(list(step())),
+        repeat_delay=0,
+    )
+    plt.show()
+    ani.save(filename="gps_sim.gif", fps=fps, dpi=100)
+
+if __name__ == "__main__":
+    main()
+
+
