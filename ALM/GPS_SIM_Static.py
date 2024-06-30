@@ -25,6 +25,20 @@ ANTENNA_LOCATION = [
 
 
 def compute_mean_anomaly(E, e, t, toa, GRAV_CONSTANT, EARTH_MASS):
+    """
+    Compute the mean anomaly for a satellite.
+
+    Parameters:
+    E (float): Eccentric anomaly.
+    e (float): Eccentricity.
+    t (float): Time at which to compute the anomaly.
+    toa (float): Time of applicability.
+    GRAV_CONSTANT (float): Gravitational constant.
+    EARTH_MASS (float): Mass of the Earth.
+
+    Returns:
+    float: The mean anomaly at time t.
+    """
     a = E**2
     n = np.sqrt(GRAV_CONSTANT * EARTH_MASS / a**3)  # Mean motion
     M0 = E - e * np.sin(E)  # Mean anomaly at reference time
@@ -32,6 +46,18 @@ def compute_mean_anomaly(E, e, t, toa, GRAV_CONSTANT, EARTH_MASS):
 
 
 def solve_keplers_equation(M, E, e, iterations=10): # https://scicomp.stackexchange.com/questions/40700/solving-keplers-equation-with-newton-raphson-method
+    """
+    Solve Kepler's equation using the Newton-Raphson method.
+
+    Parameters:
+    M (float): Mean anomaly.
+    E (float): Initial guess for eccentric anomaly.
+    e (float): Eccentricity.
+    iterations (int): Maximum number of iterations. Default is 10.
+
+    Returns:
+    float: The solution for the eccentric anomaly.
+    """
     E_prev = E
     p = 1
     i = 0
@@ -42,10 +68,21 @@ def solve_keplers_equation(M, E, e, iterations=10): # https://scicomp.stackexcha
         E_new = E_new
         i += 1
     print(f'Solved in {i} iterations.')
-    return E_new
+    return E_new / 1e-15 # Added temporary sln for improper anomaly calculation
 
 
 def compute_orbital_position(a, e, E_new):
+    """
+    Compute the orbital position of a satellite.
+
+    Parameters:
+    a (float): Semi-major axis.
+    e (float): Eccentricity.
+    E_new (float): Eccentric anomaly.
+
+    Returns:
+    tuple: Orbital position coordinates (x_orb, y_orb).
+    """
     r = a * (1 - e * math.cos(E_new))
     beta = (e/1+np.sqrt(1-e**2))
     v = E_new + np.arctan2((beta*np.sin(E_new)),(1-beta*np.cos(E_new))) #https://ui.adsabs.harvard.edu/abs/1973CeMec...7..388B/abstract
@@ -56,6 +93,19 @@ def compute_orbital_position(a, e, E_new):
 
 
 def rotate_position(x_orb, y_orb, w, inc, ra_week):
+    """
+    Rotate the orbital position to the correct reference frame.
+
+    Parameters:
+    x_orb (float): Orbital x position.
+    y_orb (float): Orbital y position.
+    w (float): Argument of perigee.
+    inc (float): Inclination.
+    ra_week (float): Right ascension of the ascending node.
+
+    Returns:
+    tuple: Rotated position coordinates (x_final, y_final, z_prime).
+    """
     x_prime = math.cos(w) * x_orb - math.sin(w) * y_orb
     y_prime = math.sin(w) * x_orb + math.cos(w) * y_orb
     z_prime = math.sin(inc) * y_prime
@@ -66,6 +116,16 @@ def rotate_position(x_orb, y_orb, w, inc, ra_week):
 
 
 def compute_sat_pos(args, t):
+    """
+    Compute the position of a satellite at a given time.
+
+    Parameters:
+    args (list): Satellite parameters.
+    t (float): Time at which to compute the position.
+
+    Returns:
+    list: Satellite ID and position coordinates [satID, x_final, y_final, z_prime].
+    """
     [satID, health, e, toa, inc, ascRate, sqrt_a, ra_week, w, E, Af0, Af1] = args
     t = t + toa  # Sync Animation to TOA
     a = sqrt_a**2
@@ -122,15 +182,13 @@ def meshTolines(a, b, c):
 
 def computeAllEarthPos(times):
     """
-    Plot the Earth rotation as line segments for the given time of flight.
+    Compute the Earth's position at different times.
 
     Parameters:
-    ax (Axes3D): Matplotlib 3D axes object.
-    tof (float): Time of flight in seconds.
-    mps (float): Number of simulated location points per second.
+    times (ndarray): Array of time values.
 
     Returns:
-    ndarray: Array of line segments for each time step.
+    ndarray: Array of Earth's position line segments for each time step.
     """
     earth_segs = []
     for t in times:
@@ -148,12 +206,10 @@ def computeAllEarthPos(times):
 
 def computeAllAntPos(times, ant):
     """
-    Plot the antenna movement as it rotates with the Earth.
+    Compute the antenna's position at different times.
 
     Parameters:
-    ax (Axes3D): Matplotlib 3D axes object.
-    tof (float): Time of flight in seconds.
-    mps (float): Number of simulated location points per second.
+    times (ndarray): Array of time values.
     ant (list): Antenna position in spherical coordinates (radius, theta, phi).
 
     Returns:
@@ -166,23 +222,6 @@ def computeAllAntPos(times, ant):
         antCart = sphericalTocartesian(ant)
         antennaMovement.append([antCart[0], antCart[1], antCart[2]])
     return np.stack(antennaMovement)
-
-
-def plotSats(ax, satCoords):
-    """
-    Plot the satellite positions on the 3D plot.
-
-    Parameters:
-    ax (Axes3D): Matplotlib 3D axes object.
-    satCoords (ndarray): Array of satellite coordinates.
-
-    Returns:
-    None
-    """
-    for satCoord in satCoords:
-        # ax.scatter(satCoord[1],satCoord[2],satCoord[3],c='green',marker='.',s=20)
-        # ax.text(satCoord[1],satCoord[2],satCoord[3],int(satCoord[0]))
-        exit
 
 
 def sphericalTocartesian(sCoords):  # sCoords (rad,theta,phi)
@@ -201,12 +240,11 @@ def sphericalTocartesian(sCoords):  # sCoords (rad,theta,phi)
     return [cartX, cartY, cartZ]
 
 
-def init_fig(ax, artists, satCoords):
+def init_fig(ax, artists):
     """
     Initialize the 3D plot with labels and settings.
 
     Parameters:
-    fig (Figure): Matplotlib figure object.
     ax (Axes3D): Matplotlib 3D axes object.
     artists (Artists): Named tuple containing the wireframe and quiver artists.
 
@@ -223,7 +261,6 @@ def init_fig(ax, artists, satCoords):
     ax.set_xlim([-3 * RADIUS_EARTH, 3 * RADIUS_EARTH])
     ax.set_ylim([-3 * RADIUS_EARTH, 3 * RADIUS_EARTH])
     ax.set_zlim([-3 * RADIUS_EARTH, 3 * RADIUS_EARTH])
-    #plotSats(ax, satCoords)  # Skip the first one it's bad data
     return artists
 
 
@@ -238,8 +275,9 @@ def update_artists(frame, artists):
     Returns:
     Artists: The updated artists.
     """
-    earth_segs, sat_coord = frame
-    x, y, z, u, v, w, m, n, o, p, q, r = earth_segs
+    earth_segs, ant_segs, sat_coord = frame
+    m, n, o, p, q, r = earth_segs
+    x, y, z, u, v, w = ant_segs
     temp = np.array([x, y, z, u, v, w]).reshape(6, -1)
     qSegs = [[[x, y, z], [u, v, w]] for x, y, z, u, v, w in zip(*temp.tolist())]
     temp = np.array([m, n, o, p, q, r]).reshape(6, -1)
@@ -250,7 +288,18 @@ def update_artists(frame, artists):
     return artists
 
 
-def get_segs(i):
+def get_segs(i, earthMotion, antMotion):
+    """
+    Get the segments for the Earth and antenna motion at a given time step.
+
+    Parameters:
+    i (int): Time step index.
+    earthMotion (ndarray): Array of Earth's motion data.
+    antMotion (ndarray): Array of antenna's motion data.
+
+    Returns:
+    tuple: Segments for the Earth and antenna motion.
+    """
     sigStr = 1.5
     m, n, o, p, q, r = (
         earthMotion[i, 0],
@@ -271,7 +320,7 @@ def get_segs(i):
     return x, y, z, u, v, w, m, n, o, p, q, r
 
 
-def get_satPos(i):
+def get_satPos(i, satCoordsOverTime):
     satCoords = satCoordsOverTime[i]
     return satCoords
 
@@ -284,21 +333,22 @@ def compute_all_sat_pos(const_data, times):
     return np.array(sat_coords_over_time)
 
 
-def frame_iter(times):
+def frame_iter(times, earthMotion, antMotion, satCoordsOverTime):
     # Helper funciton in animation
     for i in range(len(times)):
-        x, y, z, u, v, w, m, n, o, p, q, r = get_segs(i)
-        earth_segs = [x, y, z, u, v, w, m, n, o, p, q, r]
-        satPos = get_satPos(i)
+        x, y, z, u, v, w, m, n, o, p, q, r = get_segs(i, earthMotion, antMotion)
+        earth_segs = [m, n, o, p, q, r]
+        ant_segs = [x,y,z,u,v,w]
+        satPos = get_satPos(i, satCoordsOverTime)
         print(f"Frame {i} of {len(times)}")
-        yield (earth_segs, satPos)
+        yield (earth_segs, ant_segs, satPos)
 
 
 def main():
     ##Void Run Method for simulation
     # Create Antenna (radius,theta,phi) Starting Antenna Position
-    tof = 120 # Total sim time (Seconds)
-    dt = 0.5  # Time step (seconds)
+    tof = 240*3600 # Total sim time (Seconds)
+    dt = 3600  # Time step (seconds)
     times = np.linspace(0, tof, int(tof / dt + 1), endpoint=True)
     [constData, activeSats] = yuma_decode.gatherData()
     satCoordsOverTime = compute_all_sat_pos(constData, times)
@@ -318,8 +368,8 @@ def main():
         ax.scatter([], [], [], c="green", marker=".", s=20),
     )
 
-    init = partial(init_fig, ax=ax, artists=artists, satCoords=satCoordsOverTime[0])
-    step = partial(frame_iter, times)
+    init = partial(init_fig, ax=ax, artists=artists)
+    step = partial(frame_iter, times, earthMotion, antMotion, satCoordsOverTime)
     update = partial(update_artists, artists=artists)
     ani = animation.FuncAnimation(
         fig=fig,
