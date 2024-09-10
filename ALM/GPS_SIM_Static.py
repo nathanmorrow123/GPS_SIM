@@ -24,7 +24,7 @@ ANTENNA_LOCATION = [
 # Assuming antenna is normal to earth surface
 
 
-def compute_mean_anomaly(E, e, t, toa, GRAV_CONSTANT, EARTH_MASS):
+def compute_mean_anomaly(a, E, e, t, toa, GRAV_CONSTANT, EARTH_MASS):
     """
     Compute the mean anomaly for a satellite.
 
@@ -39,13 +39,11 @@ def compute_mean_anomaly(E, e, t, toa, GRAV_CONSTANT, EARTH_MASS):
     Returns:
     float: The mean anomaly at time t.
     """
-    a = E**2
     n = np.sqrt(GRAV_CONSTANT * EARTH_MASS / a**3)  # Mean motion
     M0 = E - e * np.sin(E)  # Mean anomaly at reference time
     return M0 + n * (t - toa)  # Mean anomaly at time t
 
-
-def solve_keplers_equation(M, E, e, iterations=10): # https://scicomp.stackexchange.com/questions/40700/solving-keplers-equation-with-newton-raphson-method
+def solve_keplers_equation(M, E, e, iterations=10):
     """
     Solve Kepler's equation using the Newton-Raphson method.
 
@@ -59,17 +57,16 @@ def solve_keplers_equation(M, E, e, iterations=10): # https://scicomp.stackexcha
     float: The solution for the eccentric anomaly.
     """
     E_prev = E
-    p = 1
-    i = 0
-    while(p>=0.01):  # Iterate to solve for E
-        E_new = E_prev -  (E_prev - np.abs(e) * math.sin(E_prev)- M ) / ( 1 - np.abs(e)*np.cos(E_prev))
-        p = np.abs((E_new - E_prev) / E_new)
+    for i in range(iterations):
+        f_E = E_prev - e * np.sin(E_prev) - M
+        f_prime_E = 1 - e * np.cos(E_prev)
+        E_new = E_prev - f_E / f_prime_E
+        if abs(E_new - E_prev) < 1e-10:
+            print(f'Solved in {i+1} iterations.')
+            return E_new
         E_prev = E_new
-        E_new = E_new
-        i += 1
-    print(f'Solved in {i} iterations.')
-    return E_new / 1e-15 # Added temporary sln for improper anomaly calculation
-
+    print(f'Solved in {iterations} iterations with approximation.')
+    return E_new
 
 def compute_orbital_position(a, e, E_new):
     """
@@ -83,12 +80,11 @@ def compute_orbital_position(a, e, E_new):
     Returns:
     tuple: Orbital position coordinates (x_orb, y_orb).
     """
-    r = a * (1 - e * math.cos(E_new))
-    beta = (e/1+np.sqrt(1-e**2))
-    v = E_new + np.arctan2((beta*np.sin(E_new)),(1-beta*np.cos(E_new))) #https://ui.adsabs.harvard.edu/abs/1973CeMec...7..388B/abstract
-    #v = np.arccos((np.cos(E_new) - e) / (1 - e * np.cos(E_new))) #https://en.wikipedia.org/wiki/True_anomaly less accurate for edge cases
-    x_orb = r * math.cos(v)
-    y_orb = r * math.sin(v)
+    r = a * (1 - e * np.cos(E_new))  # Corrected radius calculation
+    v = 2 * np.arctan2(np.sqrt(1 + e) * np.sin(E_new / 2), np.sqrt(1 - e) * np.cos(E_new / 2))  # Correct true anomaly
+
+    x_orb = r * np.cos(v)
+    y_orb = r * np.sin(v)
     return x_orb, y_orb
 
 
@@ -129,7 +125,7 @@ def compute_sat_pos(args, t):
     [satID, health, e, toa, inc, ascRate, sqrt_a, ra_week, w, E, Af0, Af1] = args
     t = t + toa  # Sync Animation to TOA
     a = sqrt_a**2
-    M = compute_mean_anomaly(E, e, t, toa, GRAV_CONSTANT, EARTH_MASS)
+    M = compute_mean_anomaly(a, E, e, t, toa, GRAV_CONSTANT, EARTH_MASS)
     E_new = solve_keplers_equation(M, E, e)
     x_orb, y_orb = compute_orbital_position(a, e, E_new)
     x_final, y_final, z_prime = rotate_position(x_orb, y_orb, w, inc, ra_week)
@@ -251,13 +247,14 @@ def init_fig(ax, artists):
     Returns:
     Artists: The updated artists.
     """
-    ax.set_xlabel("X axis")
-    ax.set_ylabel("Y Axis")
-    ax.set_zlabel("Z Axis")
+    #ax.set_xlabel("X axis")
+    #ax.set_ylabel("Y Axis")
+    #ax.set_zlabel("Z Axis")
     ax.grid(False)
-    ax.xaxis.set_pane_color((0.1, 0.1, 0.1, 0.1))
-    ax.yaxis.set_pane_color((0.1, 0.1, 0.1, 0.1))
-    ax.zaxis.set_pane_color((0.1, 0.1, 0.1, 0.1))
+    #ax.xaxis.set_pane_color((0.1, 0.1, 0.1, 0.1))
+    #ax.yaxis.set_pane_color((0.1, 0.1, 0.1, 0.1))
+    #ax.zaxis.set_pane_color((0.1, 0.1, 0.1, 0.1))
+    plt.axis('off')
     ax.set_xlim([-3 * RADIUS_EARTH, 3 * RADIUS_EARTH])
     ax.set_ylim([-3 * RADIUS_EARTH, 3 * RADIUS_EARTH])
     ax.set_zlim([-3 * RADIUS_EARTH, 3 * RADIUS_EARTH])
@@ -283,7 +280,7 @@ def update_artists(frame, artists):
     temp = np.array([m, n, o, p, q, r]).reshape(6, -1)
     wSegs = [[[m, n, o], [p, q, r]] for m, n, o, p, q, r in zip(*temp.tolist())]
     artists.wireframe.set_segments(wSegs)
-    artists.quiver.set_segments(qSegs)
+    #artists.quiver.set_segments(qSegs)
     artists.sat_pos._offsets3d = (sat_coord[:, 1], sat_coord[:, 2], sat_coord[:, 3])
     return artists
 
@@ -347,8 +344,8 @@ def frame_iter(times, earthMotion, antMotion, satCoordsOverTime):
 def main():
     ##Void Run Method for simulation
     # Create Antenna (radius,theta,phi) Starting Antenna Position
-    tof = 240*3600 # Total sim time (Seconds)
-    dt = 3600  # Time step (seconds)
+    tof = 2400*5 # Total sim time (Seconds)
+    dt = 10  # Time step (seconds)
     times = np.linspace(0, tof, int(tof / dt + 1), endpoint=True)
     [constData, activeSats] = yuma_decode.gatherData()
     satCoordsOverTime = compute_all_sat_pos(constData, times)
@@ -382,7 +379,7 @@ def main():
         repeat_delay=0,
     )
     plt.show()
-    ani.save(filename="gps_sim.gif", fps=fps, dpi=100)
+    ani.save(filename="gps_sim.gif", fps=fps, dpi=500)
 
 if __name__ == "__main__":
     main()
